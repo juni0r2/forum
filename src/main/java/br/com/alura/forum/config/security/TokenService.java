@@ -32,4 +32,19 @@ public class TokenService {
                 .signWith(SignatureAlgorithm.HS256,secret)
                 .compact();
     }
+
+    public Boolean isTokenValido(String token) {
+
+        try {
+            Jwts.parser().setSigningKey(this.secret).parseClaimsJws(token);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public Long getIdUsuario(String token) {
+        String idUsuario = Jwts.parser().setSigningKey(this.secret).parseClaimsJws(token).getBody().getSubject();
+        return Long.parseLong(idUsuario);
+    }
 }
