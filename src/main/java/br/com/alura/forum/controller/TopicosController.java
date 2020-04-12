@@ -8,6 +8,12 @@ import br.com.alura.forum.model.Topico;
 import br.com.alura.forum.repository.CursoRepository;
 import br.com.alura.forum.repository.TopicoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,12 +23,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.validation.Valid;
 import java.net.URI;
-import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/topicos")
@@ -35,16 +42,21 @@ public class TopicosController {
     private CursoRepository cursoRepository;
 
     @GetMapping
-    public List<TopicoDto> lista(String nomeCurso) {
+    @Cacheable(value = "listaDeTopicos")
+    public Page<TopicoDto> lista(@RequestParam(required = false) String nomeCurso,
+                                 @PageableDefault(sort = "id", direction = Sort.Direction.DESC) Pageable paginacao) {
 
         if (nomeCurso == null) {
-            return TopicoDto.converter(topicoRepository.findAll());
+            Page<Topico> topicos = topicoRepository.findAll(paginacao);
+            return TopicoDto.converter(topicos);
         } else {
-            return TopicoDto.converter(topicoRepository.carregarPorNomeCurso(nomeCurso));
+            Page<Topico> topicos = topicoRepository.findByCursoNome(nomeCurso, paginacao);
+            return TopicoDto.converter(topicos);
         }
     }
 
     @PostMapping
+    @CacheEvict(value = "listaDeTopicos", allEntries = true)
     public ResponseEntity<TopicoDto> cadastrar(@RequestBody @Valid TopicoForm form, UriComponentsBuilder uriBuilder) {
         Topico topico = form.converter(cursoRepository);
         topicoRepository.save(topico);
@@ -54,20 +66,38 @@ public class TopicosController {
     }
 
     @GetMapping("/{id}")
-    public DetalheTopicoDto detalhar(@PathVariable Long id) {
-        Topico topico = topicoRepository.getOne(id);
-        return new DetalheTopicoDto(topico);
+    public ResponseEntity<DetalheTopicoDto> detalhar(@PathVariable Long id) {
+        Optional<Topico> optional = topicoRepository.findById(id);
+
+        if (optional.isPresent()){
+            return ResponseEntity.ok(new DetalheTopicoDto(optional.get()));
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/{id}")
+    @CacheEvict(value = "listaDeTopicos", allEntries = true)
     @Transactional
     public ResponseEntity<TopicoDto> atualizar(@PathVariable Long id, @RequestBody @Valid AtualizarTopicoForm form) {
-        Topico topico = form.atualizar(id, topicoRepository);
-        return ResponseEntity.ok(new TopicoDto(topico));
+
+        Optional<Topico> optional = topicoRepository.findById(id);
+
+        if (optional.isPresent()){
+            Topico topico = form.atualizar(id, topicoRepository);
+            return ResponseEntity.ok(new TopicoDto(topico));
+        }
+        return ResponseEntity.notFound().build();
     }
 
     @DeleteMapping("/{id}")
+    @CacheEvict(value = "listaDeTopicos", allEntries = true)
     public ResponseEntity<TopicoDto> remover(@PathVariable Long id) {
-        return null;
+        Optional<Topico> optional = topicoRepository.findById(id);
+
+        if (optional.isPresent()) {
+            topicoRepository.deleteById(id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.notFound().build();
     }
 }
